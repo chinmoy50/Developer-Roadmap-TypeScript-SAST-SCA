@@ -7,6 +7,7 @@ pipeline {
         APPLICATION_ID = '673413da502d06461c39d283'
         SCA_API_URL = 'https://appsecops-api.intruceptlabs.com/api/v1/integrations/sca-scans'
         SAST_API_URL = 'https://appsecops-api.intruceptlabs.com/api/v1/integrations/sast-scans'
+        
     }
 
     stages {
@@ -44,19 +45,19 @@ pipeline {
                 script {
                     def response = sh(script: """
                         #!/bin/bash
-                        curl --http1.1 -s -X POST \
+                        curl -v -X POST \
                         -H "Client-ID: ${CLIENT_ID}" \
                         -H "Client-Secret: ${CLIENT_SECRET}" \
                         -F "projectZipFile=@project.zip" \
                         -F "applicationId=${APPLICATION_ID}" \
-                        -F "scanName=JavaScript SCA Scan from Jenkins Pipeline" \
-                        -F "language=JavaScript" \
-                        "${SCA_API_URL}" || echo '{"canProceed":false,"vulnsTable":"[ERROR] SCA API failed."}'
+                        -F "scanName=TypeScript SCA Scan from Jenkins Pipeline" \
+                        -F "language=TypeScript" \
+                        "${SCA_API_URL}"
                     """, returnStdout: true).trim()
 
                     def jsonResponse = readJSON(text: response)
-                    def canProceedSCA = jsonResponse.getOrDefault('canProceed', false)
-                    def vulnsTable = jsonResponse.getOrDefault('vulnsTable', '[No vulnerabilities data]')
+                    def canProceedSCA = jsonResponse.canProceed
+                    def vulnsTable = jsonResponse.vulnsTable
 
                     def cleanVulnsTable = vulnsTable.replaceAll(/\x1B\[[;0-9]*m/, '')
 
@@ -69,35 +70,36 @@ pipeline {
         }
 
         stage('Check SCA Result') {
-            when {
-                expression { return env.CAN_PROCEED_SCA != 'true' }
-            }
-            steps {
-                error "SCA scan failed. Deployment cancelled."
-            }
-        }
+	       when {
+		       expression { return env.CAN_PROCEED_SCA != 'true' }
+	       }
+	       steps {
+		       script {
+		           catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+		                error "SCA scan failed. Deployment cancelled."
+		           }
+		       }
+	       }
+	    }
 
         stage('Perform SAST Scan') {
-            when {
-                expression { return env.CAN_PROCEED_SCA == 'true' }
-            }
             steps {
                 script {
                     def response = sh(script: """
                         #!/bin/bash
-                        curl --http1.1 -s -X POST \
+                        curl -v -X POST \
                         -H "Client-ID: ${CLIENT_ID}" \
                         -H "Client-Secret: ${CLIENT_SECRET}" \
                         -F "projectZipFile=@project.zip" \
                         -F "applicationId=${APPLICATION_ID}" \
-                        -F "scanName=JavaScript SAST Scan from Jenkins Pipeline" \
-                        -F "language=JavaScript" \
-                        "${SAST_API_URL}" || echo '{"canProceed":false,"vulnsTable":"[ERROR] SAST API failed."}'
+                        -F "scanName=TypeScript SAST Scan from Jenkins Pipeline" \
+                        -F "language=TypeScript" \
+                        "${SAST_API_URL}"
                     """, returnStdout: true).trim()
 
                     def jsonResponse = readJSON(text: response)
-                    def canProceedSAST = jsonResponse.getOrDefault('canProceed', false)
-                    def vulnsTable = jsonResponse.getOrDefault('vulnsTable', '[No vulnerabilities data]')
+                    def canProceedSAST = jsonResponse.canProceed
+                    def vulnsTable = jsonResponse.vulnsTable
 
                     def cleanVulnsTable = vulnsTable.replaceAll(/\x1B\[[;0-9]*m/, '')
 
